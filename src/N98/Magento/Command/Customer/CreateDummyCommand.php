@@ -37,6 +37,7 @@ HELP;
             ->addArgument('count', InputArgument::REQUIRED, 'Count')
             ->addArgument('locale', InputArgument::REQUIRED, 'Locale')
             ->addArgument('website', InputArgument::OPTIONAL, 'Website')
+            ->addOption('password', 'p', InputOption::VALUE_OPTIONAL, 'Sets all created customers to have the specified password')
             ->setDescription('Generate dummy customers. You can specify a count and a locale.')
             ->addOption(
                 'format',
@@ -48,6 +49,9 @@ HELP;
         ;
     }
 
+    protected function password($string){
+
+    }
     /**
      * @param InputInterface $input
      * @param OutputInterface $output
@@ -77,7 +81,10 @@ HELP;
 
                 $customer->setWebsiteId($website->getId());
                 $customer->loadByEmail($email);
-                $password = $customer->generatePassword();
+                $password = $input->getOption('password');
+                if(!isset($password)){
+                    $password = $customer->generatePassword();
+                }
 
                 if (!$customer->getId()) {
                     $customer->setWebsiteId($website->getId());
