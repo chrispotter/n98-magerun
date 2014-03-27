@@ -7,6 +7,7 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use N98\Util\Console\Helper\Table\Renderer\RendererFactory;
+use Symfony\Component\Validator\Exception\InvalidArgumentException;
 
 class CreateDummyCommand extends AbstractCustomerCommand
 {
@@ -37,6 +38,7 @@ HELP;
             ->addArgument('count', InputArgument::REQUIRED, 'Count')
             ->addArgument('locale', InputArgument::REQUIRED, 'Locale')
             ->addArgument('website', InputArgument::OPTIONAL, 'Website')
+            ->addOption('address', 'a', InputOption::VALUE_NONE, 'Generates random Address information for generated customers(US Locale Only)')
             ->addOption('password', 'p', InputOption::VALUE_OPTIONAL, 'Sets all created customers to have the specified password')
             ->setDescription('Generate dummy customers. You can specify a count and a locale.')
             ->addOption(
@@ -48,9 +50,59 @@ HELP;
             ->setHelp($help)
         ;
     }
+    protected function formatUSAddress($address){
 
-    protected function password($string){
+        try{
+            $rtnAddress['street'] = $address->streetAddress;
+        }
+        catch(\InvalidArgumentException $e){
+            $rtnAddress['street'] = $address->street;
+        }
 
+        $rtnAddress['postCode'] = $address->postcode;
+        $rtnAddress['city'] = $address->city;
+        try{
+            $rtnAddress['state'] = $address->state;
+        }catch(\InvalidArgumentException $e){
+            $rtnAddress['state'] = '';
+        }
+
+        return $rtnAddress;
+    }
+
+    protected function setAddress($customer, $faker, $input){
+        $address = $this->formatUSAddress($faker);
+
+        //get Magento Address to save to Customer
+        $mageAddress = $this->_getModel('customer/address', 'Mage_Customer_Model_Address');
+        $mageAddress->setCustomerId($customer->getId());
+        $mageAddress->firstname = $customer->firstname;
+        $mageAddress->lastname = $customer->lastname;
+        $mageAddress->email = $customer->getEmail();
+        $mageAddress->street = $address['street'];
+        $mageAddress->country_id = explode("_",$input->getArgument('locale'))[1];
+        $mageAddress->setIsDefaultBilling(true);
+        $mageAddress->setIsDefaultShipping(true);
+
+        $mageAddress->city = $address['city'];
+        if($input->getArgument('locale') == "en_US"){
+            $mageAddress->setRegionId(rand(0,50));
+            $region = $this->_getModel('directory/region', 'Mage_Directory_Model_Region');
+            $region->load($mageAddress->getRegionId());
+            $mageAddress->setRegion($region->getName());
+            $mageAddress->postcode = $address['postCode'];
+        }
+        else{
+            $mageAddress->city = $address['city'];
+            if(!$mageAddress == "BG" or !$mageAddress == "CZ"){
+                $mageAddress->setRegion($address['state']);
+            }
+            $mageAddress->postcode = $address['postCode'];
+        }
+
+        //Set Telephone Number
+        $mageAddress->telephone = $faker->phoneNumber;
+        $mageAddress->save();
     }
     /**
      * @param InputInterface $input
@@ -93,9 +145,15 @@ HELP;
                     $customer->setLastname($faker->lastName);
                     $customer->setPassword($password);
 
+
+
                     $customer->save();
                     $customer->setConfirmation(null);
                     $customer->save();
+
+                    if($input->getOption('address')){
+                        $this->setAddress($customer, $faker, $input);
+                    }
 
                     if ($outputPlain) {
                         $output->writeln('<info>Customer <comment>' . $email . '</comment> with password <comment>' . $password .  '</comment> successfully created</info>');
