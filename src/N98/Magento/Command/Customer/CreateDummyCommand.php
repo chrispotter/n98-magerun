@@ -14,23 +14,23 @@ class CreateDummyCommand extends AbstractCustomerCommand
     protected function configure()
     {
         $help = <<<HELP
-Supported Locales:
+Supported Locales:      (a) signifies address support
 
-- cs_CZ
+- cs_CZ (a)
 - ru_RU
-- bg_BG
-- en_US
-- it_IT
-- sr_RS
-- sr_Cyrl_RS
-- sr_Latn_RS
-- pl_PL
-- en_GB
-- de_DE
-- sk_SK
-- fr_FR
-- es_AR
-- de_AT
+- bg_BG (a)
+- en_US (a)
+- it_IT (a)
+- sr_RS (a)
+- sr_Cyrl_RS    (a)
+- sr_Latn_RS    (a)
+- pl_PL (a)
+- en_GB (a)
+- de_DE (a)
+- sk_SK (a)
+- fr_FR (a)
+- es_AR (a)
+- de_AT (a)
 HELP;
 
         $this
@@ -50,13 +50,13 @@ HELP;
             ->setHelp($help)
         ;
     }
-    protected function formatUSAddress($address){
+    protected function formatAddress($address){
 
         try{
             $rtnAddress['street'] = $address->streetAddress;
         }
         catch(\InvalidArgumentException $e){
-            $rtnAddress['street'] = $address->street;
+            $rtnAddress['street'] = rand(0,100). ' ' . $address->street;
         }
 
         $rtnAddress['postCode'] = $address->postcode;
@@ -71,7 +71,7 @@ HELP;
     }
 
     protected function setAddress($customer, $faker, $input){
-        $address = $this->formatUSAddress($faker);
+        $address = $this->formatAddress($faker);
 
         //get Magento Address to save to Customer
         $mageAddress = $this->_getModel('customer/address', 'Mage_Customer_Model_Address');
@@ -80,25 +80,33 @@ HELP;
         $mageAddress->lastname = $customer->lastname;
         $mageAddress->email = $customer->getEmail();
         $mageAddress->street = $address['street'];
-        $mageAddress->country_id = explode("_",$input->getArgument('locale'))[1];
+
+        $mageAddress->country_id = end(explode("_",$input->getArgument('locale')));
+
         $mageAddress->setIsDefaultBilling(true);
         $mageAddress->setIsDefaultShipping(true);
 
         $mageAddress->city = $address['city'];
-        if($input->getArgument('locale') == "en_US"){
-            $mageAddress->setRegionId(rand(0,50));
-            $region = $this->_getModel('directory/region', 'Mage_Directory_Model_Region');
-            $region->load($mageAddress->getRegionId());
-            $mageAddress->setRegion($region->getName());
-            $mageAddress->postcode = $address['postCode'];
+
+        //Determine if Locale is supported by Installation of Magento, If so, set region and region Id from random
+        //chosen region.  Else, use the randomly generated region.
+        $countryCollection= $this->_getModel('directory/country_api', 'Mage_Directory_Model_Country_Api')->items();
+        if(in_array($mageAddress->country_id, $countryCollection)){
+            $regionCollection = $this->_getModel('directory/region_api', 'Mage_Directory_Model_Region_Api')->items($mageAddress->country_id);
+            $regionId= $regionCollection[array_rand($regionCollection,1)]['region_id'];
+            $region = $this->_getModel('directory/region', 'Mage_Directory_Model_Region')->load($regionId);
+            $mageAddress->setRegionId($region->getRegionId());
+            $mageAddress->setRegion($region->getDefaultName());
         }
         else{
-            $mageAddress->city = $address['city'];
-            if(!$mageAddress == "BG" or !$mageAddress == "CZ"){
+            //cs_CZ, bg_BG and pl_PL return United States state names.
+            if($mageAddress->country_id != "CZ" and
+               $mageAddress->country_id!= "BG" and
+               $mageAddress->country_id!= "PL"){
                 $mageAddress->setRegion($address['state']);
             }
-            $mageAddress->postcode = $address['postCode'];
         }
+        $mageAddress->postcode = $address['postCode'];
 
         //Set Telephone Number
         $mageAddress->telephone = $faker->phoneNumber;
